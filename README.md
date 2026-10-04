@@ -5,6 +5,8 @@
 
 ---
 
+![StudyBuddy UI - Main Interface](screenshots/firstlanding.png)
+
 ## 🧩 The Problem It Solves
 
 My friend is preparing for their university exams and has **hundreds of pages of handwritten-scan PDFs, lecture slides, and typed notes** — all scattered across folders, never searchable, impossible to revise efficiently.
@@ -118,6 +120,8 @@ Lecture PDFs often have no sentence punctuation (bullet lists, tables, headers).
 Sentence splitters fail on these — they return entire pages as one chunk.
 We hard-split at 400 tokens so each chunk is a focused, retrievable unit.
 
+![StudyBuddy Document Inspector & Extracted Passages Modal](screenshots/chunks.png)
+
 ---
 
 ### 2. Ask a Question
@@ -163,6 +167,8 @@ Response UI:
 
 > **The LLM is the last resort.** Cache hits and high-confidence retrievals skip Gemma entirely.
 > In practice, repeated exam-prep questions (same question rephrased) almost always hit the cache.
+
+![StudyBuddy Hybrid Search & Direct AI Answer Synthesis](screenshots/output.png)
 
 ---
 
