@@ -1,0 +1,17 @@
+# eval_queries.yaml — fill in with real questions from your friend's notes
+# Run: python scripts/eval_search.py --queries scripts/eval_queries.yaml
+
+queries:
+  - question: "What are the Fundamental Rights?"
+    expected_filename: polity_notes.pdf
+    expected_substring: "Article"
+
+  - question: "Explain the water cycle"
+    expected_filename: geography_notes.pdf
+    expected_substring: "evaporation"
+
+  - question: "What is photosynthesis?"
+    expected_filename: biology_notes.pdf
+    expected_substring: "chlorophyll"
+
+  # Add 7 more queries covering different topics from your notes...

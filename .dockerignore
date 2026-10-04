@@ -1,0 +1,52 @@
+# StudyBuddy .dockerignore
+
+# ── Git ──
+.git
+.gitignore
+.github
+
+# ── Environment & Secrets ──
+.env
+.env.*
+!.env.example
+
+# ── Uploads & User Files ──
+uploads/*
+!uploads/.gitkeep
+
+# ── Python & Virtual Environments ──
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+.pytest_cache/
+.cache/
+*.log
+
+# ── Node / UI Build & Dependencies ──
+ui/node_modules/
+ui/dist/
+ui/.vite/
+
+# ── Docker Persistent Local Volumes ──
+pg_data/
+ollama_data/
+
+# ── IDE & Metadata Files ──
+.vscode/
+.idea/
+.gemini/
+*.swp
+*.swo
+
+# ── Documentation ──
+README.md
+*.md
+
+# ── OS Files ──
+.DS_Store
+Thumbs.db
+desktop.ini

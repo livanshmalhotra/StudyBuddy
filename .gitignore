@@ -1,0 +1,76 @@
+# StudyBuddy .gitignore
+
+# ── Secrets & Environment ──
+.env
+.env.*
+!.env.example
+
+# ── Uploads folder (User notes - keep folder, ignore files) ──
+uploads/*
+!uploads/.gitkeep
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+
+# ── Pytest & Testing ──
+.pytest_cache/
+.cache/
+.coverage
+htmlcov/
+*.log
+
+# ── Node / UI (React + Vite) ──
+ui/node_modules/
+ui/dist/
+ui/dist-ssr/
+ui/.vite/
+ui/*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── Docker Persistent Volumes ──
+pg_data/
+ollama_data/
+
+# ── IDEs & Editors ──
+.vscode/
+.idea/
+*.swp
+*.swo
+.gemini/
+
+# ── OS Generated Files ──
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini

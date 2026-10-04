@@ -1,0 +1,106 @@
+# ─── StudyBuddy — local-first RAG for UPSC notes ────────────────────────────
+# Day 1: Retrieval with no LLM. Gemma is pulled but never called yet.
+#
+# GPU note (CUDA):
+#   Uncomment the 'deploy' block under the ollama service and set
+#   OLLAMA_NUM_GPU=1 in .env.  Leave it commented for CPU-only mode.
+#
+# To start:  docker compose up -d
+# To stop:   docker compose down
+# To reset:  docker compose down -v   (deletes all volumes)
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── Postgres 16 + pgvector ──────────────────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: studybuddy_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-studybuddy}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-studybuddy}
+      POSTGRES_DB: ${POSTGRES_DB:-studybuddy}
+    ports:
+      - "5433:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      # schema.sql is auto-run by Postgres on first container start
+      - ./core/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-studybuddy} -d ${POSTGRES_DB:-studybuddy}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ── Ollama (CPU by default) ──────────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: studybuddy_ollama
+    restart: unless-stopped
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-24h}
+    # ── GPU (CUDA) — uncomment below to enable GPU passthrough ──────────────
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  # ── Temporal dev server (backed by our Postgres, dev mode) ─────────────────
+  # auto-setup 1.24+ dropped SQLite; using postgres12 with the same Postgres
+  # container. Temporal gets its own DB (temporal) auto-created by auto-setup.
+  temporal:
+    image: temporalio/auto-setup:1.24.2
+    container_name: studybuddy_temporal
+    restart: unless-stopped
+    ports:
+      - "${TEMPORAL_PORT:-7233}:7233"
+    environment:
+      - DB=postgres12
+      - DB_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-studybuddy}
+      - POSTGRES_PWD=${POSTGRES_PASSWORD:-studybuddy}
+      - POSTGRES_SEEDS=postgres
+      # DYNAMIC_CONFIG_FILE_PATH intentionally omitted — auto-setup uses built-in defaults
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "tctl --address localhost:7233 cluster health 2>/dev/null || exit 0"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 30s
+
+  # ── Temporal Web UI ─────────────────────────────────────────────────────────
+  temporal-ui:
+    image: temporalio/ui:latest
+    container_name: studybuddy_temporal_ui
+    restart: unless-stopped
+    ports:
+      - "${TEMPORAL_UI_PORT:-8233}:8080"
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:8233
+    depends_on:
+      - temporal
+
+volumes:
+  pg_data:
+    name: studybuddy_pg_data
+  ollama_data:
+    name: studybuddy_ollama_data
