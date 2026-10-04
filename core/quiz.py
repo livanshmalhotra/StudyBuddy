@@ -18,16 +18,23 @@ def generate_question_from_chunk(chunk_id: int, chunk_text: str, topic: Optional
     """
     Calls Gemma LLM via Ollama to generate an MCQ question grounded in the chunk text.
     """
-    prompt = f"""Based ONLY on the text below, generate 1 multiple-choice question (MCQ) with 4 options (A, B, C, D) and specify the correct option letter.
+    prompt = f"""You are an exam question creator. Read the study note passage below and write ONE specific multiple-choice question (MCQ) testing key concepts in it.
 
-Text:
-{chunk_text[:1000]}
+Passage:
+{chunk_text[:800]}
 
-Respond ONLY in valid JSON with format:
+Write a specific, meaningful question in the "stem" field, 4 clear options (A, B, C, D), and the correct option letter.
+
+Respond ONLY with valid JSON matching this exact format:
 {{
   "type": "mcq",
-  "stem": "Question text here?",
-  "options": {{ "A": "...", "B": "...", "C": "...", "D": "..." }},
+  "stem": "Which data structure follows the Last-In First-Out (LIFO) principle?",
+  "options": {{
+    "A": "Stack",
+    "B": "Queue",
+    "C": "Linked List",
+    "D": "Binary Tree"
+  }},
   "answer": "A",
   "difficulty": "medium"
 }}"""
@@ -38,7 +45,7 @@ Respond ONLY in valid JSON with format:
             "model": settings.LLM_MODEL,
             "prompt": prompt,
             "stream": False,
-            "options": {"temperature": 0.2, "num_predict": 200},
+            "options": {"temperature": 0.3, "num_predict": 350},
         }
         with httpx.Client() as client:
             resp = client.post(url, json=payload, timeout=30.0)
@@ -49,6 +56,10 @@ Respond ONLY in valid JSON with format:
                 end = raw.rfind("}") + 1
                 if start != -1 and end != -1:
                     data = json.loads(raw[start:end])
+                    stem = str(data.get("stem", "")).strip()
+                    # Filter out placeholder or bogus questions
+                    if not stem or "question text" in stem.lower() or len(stem) < 8:
+                        return None
                     data["chunk_id"] = chunk_id
                     data["topic"] = topic or "General Notes"
                     return data
@@ -61,14 +72,31 @@ Respond ONLY in valid JSON with format:
 def get_or_create_quiz(topic: Optional[str] = None, count: int = 5) -> List[Dict[str, Any]]:
     """
     Fetches cached questions for topic/docs or generates new ones from chunks.
+    Randomizes selection and deduplicates stems so quizzes feel fresh.
     """
+    from sqlalchemy.sql.expression import func
+
     with Session() as session:
-        query = session.query(QuestionModel)
+        # Purge any legacy placeholder questions if they exist
+        session.execute(
+            QuestionModel.__table__.delete().where(
+                QuestionModel.stem.ilike("%question text%")
+            )
+        )
+        session.commit()
+
+        # Fetch cached questions — randomized so each quiz session is different
+        query = session.query(QuestionModel).filter(
+            ~QuestionModel.stem.ilike("%question text%")
+        )
         if topic:
             query = query.filter(QuestionModel.topic == topic)
-        questions = query.limit(count).all()
 
-        if len(questions) >= count:
+        total_cached = query.count()
+
+        if total_cached >= count:
+            # Randomly pick `count` questions from the full pool
+            questions = query.order_by(func.random()).limit(count).all()
             return [
                 {
                     "id": q.id,
@@ -83,28 +111,53 @@ def get_or_create_quiz(topic: Optional[str] = None, count: int = 5) -> List[Dict
                 for q in questions
             ]
 
-        # If cached questions count is thin, generate from ready chunks
-        chunks = session.query(Chunk).limit(count * 2).all()
+        # Not enough cached — generate from chunks that DON'T already have questions
+        existing_chunk_ids = {
+            row[0] for row in session.query(QuestionModel.chunk_id).all()
+        }
+
+        # Get chunks, preferring ones without questions, randomized
+        chunks = (
+            session.query(Chunk)
+            .filter(~Chunk.id.in_(existing_chunk_ids) if existing_chunk_ids else True)
+            .order_by(func.random())
+            .limit(count * 3)
+            .all()
+        )
+
+        # Fallback: if all chunks already have questions, just pick random chunks
+        if not chunks:
+            chunks = session.query(Chunk).order_by(func.random()).limit(count * 3).all()
+
         created_questions = []
+        seen_stems = set()
 
         for c in chunks:
             if len(created_questions) >= count:
                 break
             q_data = generate_question_from_chunk(c.id, c.text, topic=topic or c.heading)
-            if q_data:
-                q_obj = QuestionModel(
-                    chunk_id=c.id,
-                    type=q_data.get("type", "mcq"),
-                    stem=q_data["stem"],
-                    options=q_data.get("options", {}),
-                    answer=q_data["answer"],
-                    difficulty=q_data.get("difficulty", "medium"),
-                    topic=q_data.get("topic", "General Notes"),
-                )
-                session.add(q_obj)
-                session.flush()
-                q_data["id"] = q_obj.id
-                created_questions.append(q_data)
+            if not q_data:
+                continue
+
+            # Deduplicate: skip if stem is too similar to one we already have
+            stem_lower = q_data["stem"].lower().strip()
+            if stem_lower in seen_stems:
+                continue
+            seen_stems.add(stem_lower)
+
+            q_obj = QuestionModel(
+                chunk_id=c.id,
+                type=q_data.get("type", "mcq"),
+                stem=q_data["stem"],
+                options=q_data.get("options", {}),
+                answer=q_data["answer"],
+                difficulty=q_data.get("difficulty", "medium"),
+                topic=q_data.get("topic", "General Notes"),
+            )
+            session.add(q_obj)
+            session.flush()
+            q_data["id"] = q_obj.id
+            created_questions.append(q_data)
 
         session.commit()
 
@@ -117,16 +170,16 @@ def get_or_create_quiz(topic: Optional[str] = None, count: int = 5) -> List[Dict
                 "id": 1,
                 "chunk_id": 1,
                 "type": "mcq",
-                "stem": "What is the primary definition of Environment in the study notes?",
+                "stem": "What is a key advantage of binary search over linear search?",
                 "options": {
-                    "A": "Everything that surrounds or affects an organism during its lifetime.",
-                    "B": "Only the physical buildings and urban structures.",
-                    "C": "Deep ocean water below 500 meters.",
-                    "D": "Inorganic chemicals only.",
+                    "A": "O(log n) time complexity on sorted arrays.",
+                    "B": "Works on unsorted linked lists directly.",
+                    "C": "Requires O(n^2) auxiliary memory space.",
+                    "D": "Executes without array index bounds.",
                 },
                 "answer": "A",
                 "difficulty": "easy",
-                "topic": "Environmental Studies",
+                "topic": "Data Structures & Algorithms",
             }
         ]
 
